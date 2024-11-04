@@ -1,0 +1,53 @@
+{
+  "port": 7002,
+  "db": {
+    "host": "dev-api-db.cfl7tce8jx2u.us-east-1.rds.amazonaws.com",
+    "port": 5432,
+    "database": "dev_novo_api",
+    "username": "",
+    "password": "",
+    "dialect": "postgres",
+    "logging": false,
+    "migrationStorage": "sequelize",
+    "seederStorage": "sequelize",
+    "pool": {
+      "max": 4,
+      "idle": 2000,
+      "evict": 2500,
+      "acquire": 15000
+    }
+  },
+  "zendesk": {
+    "url": "https://novo1682614317.zendesk.com/",
+    "email": "ayush.saraswat@novo.co",
+    "token": "b7i5D762iLsVJmxczeZKP0her91Vx0vTm4F2a6XB",
+    "api_version": "v2",
+    "identity_verification_secret": "identity-verification-secret-zendesk-hash",
+    "jwt_algorithm": "HS256",
+    "jwt_authentication_token": "7tYWlJ0vqlvQMbxiEUSF3HlHHUyqQVcoTUoF6Bj0Hylofura",
+    "app_id": "app-id",
+    "client_id": "client-id",
+    "oauth_client": "19870574024596",
+    "encryptionToken": "testestestestestsetest",
+    "ticket_action_uri": {
+      "customerInfoUpdateRequest": "https://dev.consent.novohq.com/zendesk/approve-deny-customer-info",
+      "transactionDisputeRequest": "https://dev.consent.novohq.com/zendesk/update-transaction-dispute"
+    },
+    "messaging": {
+      "kid": "kid",
+      "secret": "secret",
+      "channelKeys": {
+        "open": {
+          "ios": "channelKey",
+          "android": "channelKey",
+          "web": "channelKey"
+        },
+        "closed": {
+          "ios": "channelKey",
+          "android": "channelKey",
+          "web": "channelKey"
+        }
+      }
+    }
+  }
+}
