@@ -4,6 +4,7 @@ const request = require('request');
 const ZenDeskClient = require("zendesk-node-api");
 const config = require("../configs/config.json");
 const Bottleneck = require("bottleneck");
+const { logger } = require('../configs/logger');
 
 const zenDeskClient = new ZenDeskClient({
     url: config.zendesk.url,
@@ -40,28 +41,23 @@ const limiter = new Bottleneck({
     reservoirRefreshInterval: 60 * 1000, // Time window (in milliseconds)
 });
 
-// Wrap the getZendeskUserByEmail function with the limiter
+// Wrap functions with the limiter
 const limitedGetZendeskUserByEmail = limiter.wrap(getZendeskUserByEmail);
+const limitedMergeUserOnZendesk = limiter.wrap(mergeUserOnZendesk);
+const limitedSetEmailAsPrimaryEmail = limiter.wrap(setEmailAsPrimaryEmail);
+const limitedGetZendeskUserByZendeskId = limiter.wrap(getZendeskUserByZendeskId);
+const limitedGetZendeskTickets = limiter.wrap(getZendeskTickets);
 
-
-async function getZendeskUserByZendeskId(zendeskId) {
-    const result = await zenDeskClient.users.show(zendeskId);
-
-    return result;
-}
 
 async function getZendeskUserByEmail(email, zendeskId) {
 //  Number of allowed API requests per minute exceeded
     const rawSearchResponse = await zendeskRequest(`${config.zendesk.url}/api/v2/search.json?query=email:${encodeURIComponent(email)}`, 'GET');
-
     if (!rawSearchResponse) { };
 
     const parsedSearchResponse = JSON.parse(rawSearchResponse);
-
     if (parsedSearchResponse.error) {};
 
     const searchResults = parsedSearchResponse.results;
-
     let existingUser = {};
 
     if (searchResults.length) {
@@ -73,7 +69,74 @@ async function getZendeskUserByEmail(email, zendeskId) {
     return existingUser;
 }
 
+async function mergeUserOnZendesk(existingUserId, zendeskId) {
+  try {
+    const parsedMergeResponse = await zendeskRequest(`${config.zendesk.url}/api/v2/users/${existingUserId}/merge.json`, 'PUT', { user: { id: zendeskId } }, true);
+    if (!parsedMergeResponse || !parsedMergeResponse.user || !parsedMergeResponse.user.id || parsedMergeResponse.user.id.toString() !== zendeskId.toString()) {
+      logger.error(`mergeUserOnZendesk_FAILED orphanZendeskId: ${existingUserId}, oldZendeskId: ${zendeskId}, error: ${JSON.stringify(parsedMergeResponse)}`);
+      return false;
+    }
+
+    return parsedMergeResponse.user.external_id !== null && typeof parsedMergeResponse.user.external_id === 'string';
+  } catch (error) {
+    logger.error(`mergeUserOnZendesk_FAILED orphanZendeskId: ${existingUserId}, oldZendeskId: ${zendeskId}, error: ${JSON.stringify(error)}`);
+    return false;
+  }
+}
+
+async function setEmailAsPrimaryEmail(zendeskId, email) {
+
+  try {
+    /* First get all identities */
+    const identitiesData = await zendeskRequest(`${config.zendesk.url}/api/v2/users/${zendeskId}/identities.json`, 'GET');
+
+    if (!identitiesData) {
+      logger.error(`setEmailAsPrimaryEmail -> Could not get zendesk identities of this user. zendeskId: ${zendeskId}, email: ${email}, identitiesData: ${JSON.stringify(identitiesData)}`);
+      return false;
+    }
+
+    const parsedResponse = JSON.parse(identitiesData);
+
+    const mappedIdentity = parsedResponse.identities.find(data => (data.type === 'email' && data.value === email.toLowerCase()));
+
+    /* First check this email was not primary email */
+    if (mappedIdentity.primary === true) return true;
+
+    /* Now make this email as primary email */
+    const response = await zendeskRequest(`${config.zendesk.url}/api/v2/users/${zendeskId}/identities/${mappedIdentity.id}/make_primary.json`, 'PUT');
+    if (!response) {
+      logger.error(`setEmailAsPrimaryEmail -> Could not update email of zendesk user. zendeskId: ${zendeskId}, email: ${email}, identitiesData: ${JSON.stringify(response)}`);
+      return false;
+    }
+
+    const parsedIdentityResponse = JSON.parse(response);
+    const mappedIdentityResponse = parsedIdentityResponse.identities.find(data => (data.type === 'email' && data.value === email.toLowerCase()));
+    return mappedIdentityResponse.primary === true;
+  } catch (error) {
+    logger.error(`setEmailAsPrimaryEmail_FAILED zendeskId: ${zendeskId}, email: ${email}, error: ${JSON.stringify(error)}`);
+    return false;
+  }
+}
+
+async function getZendeskUserByZendeskId(zenDeskId) {
+
+  const result = await zenDeskClient.users.show(zenDeskId);
+
+  if (result.error) return false;
+
+  return result;
+}
+
+async function getZendeskTickets(zendeskUserId) {
+  const result = await zendeskRequest(`${config.zendesk.url}/api/v2/users/${zendeskUserId}/tickets/requested.json`, 'GET');
+
+  return JSON.parse(result);
+}
+
 module.exports = {
-    getZendeskUserByZendeskId,
-    limitedGetZendeskUserByEmail
+  limitedGetZendeskUserByZendeskId,
+  limitedGetZendeskUserByEmail,
+  limitedMergeUserOnZendesk,
+  limitedSetEmailAsPrimaryEmail,
+  limitedGetZendeskTickets
 };
